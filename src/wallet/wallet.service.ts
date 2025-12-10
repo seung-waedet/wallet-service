@@ -75,11 +75,15 @@ export class WalletService {
   }
 
   async initiateDeposit(userId: string, email: string, amount: number) {
-    this.logger.log(`Initiating deposit of ${amount} for user ${userId}`);
+    // Convert amount to kobo (multiply by 100)
+    const amountInKobo = Math.round(amount * 100);
+    this.logger.log(
+      `Initiating deposit of ${amountInKobo} kobo (${amount} naira) for user ${userId}`,
+    );
     const reference = `dep_${uuidv4()}`;
     const paystackResponse = await this.paystackService.initializeTransaction(
       email,
-      amount,
+      amountInKobo, // Send amount in kobo to Paystack
       reference,
     );
 
@@ -90,7 +94,7 @@ export class WalletService {
 
     const transaction = this.transactionRepository.create({
       wallet,
-      amount,
+      amount: amountInKobo, // Store amount in kobo
       type: TransactionType.DEPOSIT,
       status: TransactionStatus.PENDING,
       reference,
@@ -99,7 +103,7 @@ export class WalletService {
 
     await this.transactionRepository.save(transaction);
     this.logger.log(
-      `Created PENDING deposit transaction ${transaction.id} for wallet ${wallet.id}`,
+      `Created PENDING deposit transaction ${transaction.id} for wallet ${wallet.id} with amount ${amountInKobo} kobo`,
     );
 
     return {
@@ -122,9 +126,10 @@ export class WalletService {
 
     if (event === 'charge.success') {
       const reference = data.reference;
-      const amountPaid = data.amount / 100; // Paystack sends kobo
+      // Paystack sends amount in kobo - keep it as kobo for comparison
+      const amountPaidInKobo = data.amount;
       this.logger.log(
-        `Processing successful charge for reference: ${reference}`,
+        `Processing successful charge for reference: ${reference}, amount: ${amountPaidInKobo} kobo`,
       );
 
       const transaction = await this.transactionRepository.findOne({
@@ -146,9 +151,9 @@ export class WalletService {
         return;
       }
 
-      if (transaction.amount !== amountPaid) {
+      if (transaction.amount !== amountPaidInKobo) {
         this.logger.error(
-          `Amount mismatch for ${reference}. Expected ${transaction.amount}, but Paystack reported ${amountPaid}`,
+          `Amount mismatch for ${reference}. Expected ${transaction.amount} kobo, but Paystack reported ${amountPaidInKobo} kobo`,
         );
         // Potentially update transaction to FAILED here
         return;
@@ -167,11 +172,14 @@ export class WalletService {
           where: { id: transaction.wallet.id },
         });
         if (wallet) {
-          const newBalance = Number(wallet.balance) + amountPaid;
+          // Calculate new balance in kobo, then convert back to naira
+          const walletBalanceInKobo = Math.round(Number(wallet.balance) * 100);
+          const newBalanceInKobo = walletBalanceInKobo + amountPaidInKobo;
+          const newBalanceInNaira = newBalanceInKobo / 100;
           this.logger.log(
-            `Crediting wallet ${wallet.id}. Old balance: ${wallet.balance}, New balance: ${newBalance}`,
+            `Crediting wallet ${wallet.id}. Old balance: ${wallet.balance}, New balance: ${newBalanceInNaira}`,
           );
-          wallet.balance = newBalance;
+          wallet.balance = newBalanceInNaira;
           await manager.save(wallet);
         } else {
           this.logger.error(
@@ -192,11 +200,13 @@ export class WalletService {
     recipientWalletNumber: string,
     amount: number,
   ) {
-    if (amount <= 0) {
+    // Convert amount to kobo (multiply by 100)
+    const amountInKobo = Math.round(amount * 100);
+    if (amountInKobo <= 0) {
       throw new BadRequestException('Transfer amount must be greater than 0');
     }
     this.logger.log(
-      `Attempting transfer of ${amount} from user ${senderUserId} to wallet ${recipientWalletNumber}`,
+      `Attempting transfer of ${amountInKobo} kobo (${amount} naira) from user ${senderUserId} to wallet ${recipientWalletNumber}`,
     );
 
     const transferReference = `trf_${uuidv4()}`;
@@ -208,11 +218,15 @@ export class WalletService {
       });
 
       if (!senderWallet) throw new NotFoundException('Sender wallet not found');
+      // Convert balance to kobo for comparison
+      const senderBalanceInKobo = Math.round(
+        Number(senderWallet.balance) * 100,
+      );
       this.logger.debug(
-        `Sender wallet ${senderWallet.id} found with balance ${senderWallet.balance}`,
+        `Sender wallet ${senderWallet.id} found with balance ${senderBalanceInKobo} kobo (${senderWallet.balance} naira)`,
       );
 
-      if (Number(senderWallet.balance) < amount) {
+      if (senderBalanceInKobo < amountInKobo) {
         throw new BadRequestException('Insufficient funds');
       }
 
@@ -228,29 +242,34 @@ export class WalletService {
       }
       this.logger.debug(`Recipient wallet ${recipientWallet.id} found`);
 
-      // 3. Deduct from Sender
-      const senderNewBalance = Number(senderWallet.balance) - amount;
+      // 3. Deduct from Sender (in kobo)
+      const senderBalanceInKoboAfter = senderBalanceInKobo - amountInKobo;
+      const senderNewBalanceInNaira = senderBalanceInKoboAfter / 100;
       this.logger.log(
-        `Debiting sender ${senderWallet.id}. New balance will be ${senderNewBalance}`,
+        `Debiting sender ${senderWallet.id}. New balance will be ${senderNewBalanceInNaira}`,
       );
-      senderWallet.balance = senderNewBalance;
+      senderWallet.balance = senderNewBalanceInNaira;
       await manager.save(senderWallet);
 
-      // 4. Credit Recipient
-      const recipientNewBalance = Number(recipientWallet.balance) + amount;
-      this.logger.log(
-        `Crediting recipient ${recipientWallet.id}. New balance will be ${recipientNewBalance}`,
+      // 4. Credit Recipient (in kobo)
+      const recipientBalanceInKobo = Math.round(
+        Number(recipientWallet.balance) * 100,
       );
-      recipientWallet.balance = recipientNewBalance;
-      await manager.save(recipientWallet); // Note: using recipientWallet as it's the same object, no need to re-fetch
+      const recipientBalanceInKoboAfter = recipientBalanceInKobo + amountInKobo;
+      const recipientNewBalanceInNaira = recipientBalanceInKoboAfter / 100;
+      this.logger.log(
+        `Crediting recipient ${recipientWallet.id}. New balance will be ${recipientNewBalanceInNaira}`,
+      );
+      recipientWallet.balance = recipientNewBalanceInNaira;
+      await manager.save(recipientWallet);
 
-      // 5. Create Transactions
+      // 5. Create Transactions (in kobo)
       this.logger.log(
         `Creating debit and credit transaction records with base reference ${transferReference}`,
       );
       const debitTx = manager.create(Transaction, {
         wallet: senderWallet,
-        amount,
+        amount: amountInKobo, // Store amount in kobo
         type: TransactionType.TRANSFER,
         status: TransactionStatus.SUCCESS,
         reference: `${transferReference}_dr`,
@@ -262,7 +281,7 @@ export class WalletService {
 
       const creditTx = manager.create(Transaction, {
         wallet: recipientWallet,
-        amount,
+        amount: amountInKobo, // Store amount in kobo
         type: TransactionType.TRANSFER,
         status: TransactionStatus.SUCCESS,
         reference: `${transferReference}_cr`,
@@ -291,10 +310,13 @@ export class WalletService {
       throw new NotFoundException('Transaction not found');
     }
 
+    // Convert amount from kobo back to naira for the response
+    const amountInNaira = transaction.amount / 100;
+
     return {
       reference: transaction.reference,
       status: transaction.status,
-      amount: transaction.amount,
+      amount: amountInNaira,
     };
   }
 }
