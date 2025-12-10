@@ -25,7 +25,7 @@ export class PaystackService {
         `${this.baseUrl}/transaction/initialize`,
         {
           email,
-          amount: amount * 100, // Paystack expects kobo
+          amount: amount,
           reference,
           currency: 'NGN',
         },
