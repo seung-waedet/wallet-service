@@ -37,6 +37,18 @@ export class ApiKeysController {
     );
   }
 
+  @Get('list')
+  @ApiOperation({ summary: 'Get all API keys for the authenticated user' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns a list of API keys for the user.',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiBearerAuth('JWT-auth')
+  async getApiKeys(@Req() req) {
+    return this.apiKeysService.getApiKeysForUser(req.user.id);
+  }
+
   @Post('rollover')
   @ApiOperation({
     summary: 'Rollover an expired API key to generate a new one',

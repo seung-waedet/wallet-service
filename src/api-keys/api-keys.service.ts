@@ -59,12 +59,21 @@ export class ApiKeysService {
   }
 
   async rollover(user: User, expiredKeyId: string, expiry: string) {
-    const expiredKey = await this.apiKeysRepository.findOne({
+    // First, try to find by ID (UUID)
+    let expiredKey = await this.apiKeysRepository.findOne({
       where: { id: expiredKeyId, user_id: user.id },
     });
 
+    // If not found by ID, try to find by the key value (in case raw key was sent)
     if (!expiredKey) {
-      throw new BadRequestException('Invalid key ID');
+      const hashedKey = this.hashKey(expiredKeyId);
+      expiredKey = await this.apiKeysRepository.findOne({
+        where: { key: hashedKey, user_id: user.id },
+      });
+    }
+
+    if (!expiredKey) {
+      throw new BadRequestException('Invalid key ID or key not found');
     }
 
     if (expiredKey.expires_at > new Date()) {
@@ -73,6 +82,21 @@ export class ApiKeysService {
 
     // Reuse permissions
     return this.create(user, 'Rollover Key', expiredKey.permissions, expiry);
+  }
+
+  async getApiKeysForUser(userId: string) {
+    const apiKeys = await this.apiKeysRepository.find({
+      where: { user_id: userId },
+      select: ['id', 'permissions', 'expires_at', 'is_active', 'created_at'], // Don't return the actual key for security
+    });
+
+    return apiKeys.map((apiKey) => ({
+      id: apiKey.id,
+      permissions: apiKey.permissions,
+      expires_at: apiKey.expires_at,
+      is_active: apiKey.is_active,
+      created_at: apiKey.created_at,
+    }));
   }
 
   async validateKey(key: string): Promise<ApiKey | null> {

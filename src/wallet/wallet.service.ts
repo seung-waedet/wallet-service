@@ -48,155 +48,199 @@ export class WalletService {
   }
 
   async getBalance(userId: string) {
-    let wallet = await this.walletRepository.findOne({
-      where: { user_id: userId },
-    });
-    if (!wallet) {
-      // Create wallet automatically if it doesn't exist
-      const user = { id: userId } as User; // Create minimal user object
-      wallet = await this.createWallet(user);
+    try {
+      if (!userId) {
+        throw new BadRequestException('User ID is required');
+      }
+
+      let wallet = await this.walletRepository.findOne({
+        where: { user_id: userId },
+      });
+      if (!wallet) {
+        // Create wallet automatically if it doesn't exist
+        const user = { id: userId } as User; // Create minimal user object
+        wallet = await this.createWallet(user);
+      }
+      return { balance: wallet.balance };
+    } catch (error) {
+      this.logger.error(`Error retrieving balance: ${error.message}`);
+      throw error; // Re-throw to let controller handle it
     }
-    return { balance: wallet.balance };
   }
 
   async getTransactions(userId: string) {
-    let wallet = await this.walletRepository.findOne({
-      where: { user_id: userId },
-      relations: ['transactions'],
-    });
-    if (!wallet) {
-      // Create wallet automatically if it doesn't exist
-      const user = { id: userId } as User; // Create minimal user object
-      wallet = await this.createWallet(user);
+    try {
+      if (!userId) {
+        throw new BadRequestException('User ID is required');
+      }
+
+      let wallet = await this.walletRepository.findOne({
+        where: { user_id: userId },
+        relations: ['transactions'],
+      });
+      if (!wallet) {
+        // Create wallet automatically if it doesn't exist
+        const user = { id: userId } as User; // Create minimal user object
+        wallet = await this.createWallet(user);
+      }
+      return wallet.transactions.sort(
+        (a, b) => b.created_at.getTime() - a.created_at.getTime(),
+      );
+    } catch (error) {
+      this.logger.error(`Error retrieving transactions: ${error.message}`);
+      throw error; // Re-throw to let controller handle it
     }
-    return wallet.transactions.sort(
-      (a, b) => b.created_at.getTime() - a.created_at.getTime(),
-    );
   }
 
   async initiateDeposit(userId: string, email: string, amount: number) {
-    // Convert amount to kobo (multiply by 100)
-    const amountInKobo = Math.round(amount * 100);
-    this.logger.log(
-      `Initiating deposit of ${amountInKobo} kobo (${amount} naira) for user ${userId}`,
-    );
-    const reference = `dep_${uuidv4()}`;
-    const paystackResponse = await this.paystackService.initializeTransaction(
-      email,
-      amountInKobo, // Send amount in kobo to Paystack
-      reference,
-    );
+    try {
+      // Validate input parameters
+      if (!userId || !email) {
+        throw new BadRequestException('User ID and email are required');
+      }
 
-    const wallet = await this.walletRepository.findOne({
-      where: { user_id: userId },
-    });
-    if (!wallet) throw new NotFoundException('Wallet not found');
+      if (!amount || amount <= 0) {
+        throw new BadRequestException(
+          'Deposit amount must be a positive number',
+        );
+      }
 
-    const transaction = this.transactionRepository.create({
-      wallet,
-      amount: amountInKobo, // Store amount in kobo
-      type: TransactionType.DEPOSIT,
-      status: TransactionStatus.PENDING,
-      reference,
-      metadata: { authorization_url: paystackResponse.authorization_url },
-    });
+      // Convert amount to kobo (multiply by 100)
+      const amountInKobo = Math.round(amount * 100);
+      this.logger.log(
+        `Initiating deposit of ${amountInKobo} kobo (${amount} naira) for user ${userId}`,
+      );
+      const reference = `dep_${uuidv4()}`;
+      const paystackResponse = await this.paystackService.initializeTransaction(
+        email,
+        amountInKobo, // Send amount in kobo to Paystack
+        reference,
+      );
 
-    await this.transactionRepository.save(transaction);
-    this.logger.log(
-      `Created PENDING deposit transaction ${transaction.id} for wallet ${wallet.id} with amount ${amountInKobo} kobo`,
-    );
+      const wallet = await this.walletRepository.findOne({
+        where: { user_id: userId },
+      });
+      if (!wallet) throw new NotFoundException('Wallet not found');
 
-    return {
-      authorization_url: paystackResponse.authorization_url,
-      reference,
-      access_code: paystackResponse.access_code,
-    };
+      const transaction = this.transactionRepository.create({
+        wallet,
+        amount: amountInKobo, // Store amount in kobo
+        type: TransactionType.DEPOSIT,
+        status: TransactionStatus.PENDING,
+        reference,
+        metadata: { authorization_url: paystackResponse.authorization_url },
+      });
+
+      await this.transactionRepository.save(transaction);
+      this.logger.log(
+        `Created PENDING deposit transaction ${transaction.id} for wallet ${wallet.id} with amount ${amountInKobo} kobo`,
+      );
+
+      return {
+        authorization_url: paystackResponse.authorization_url,
+        reference,
+        access_code: paystackResponse.access_code,
+      };
+    } catch (error) {
+      this.logger.error(`Error initiating deposit: ${error.message}`);
+      throw error; // Re-throw to let controller handle it
+    }
   }
 
   async handlePaystackWebhook(signature: string, body: any) {
-    this.logger.log(`Received Paystack webhook event: ${body.event}`);
-    if (!this.paystackService.verifyWebhookSignature(signature, body)) {
-      this.logger.error('Invalid Paystack webhook signature');
-      throw new BadRequestException('Invalid signature');
-    }
-    this.logger.log('Paystack webhook signature verified successfully.');
+    try {
+      this.logger.log(`Received Paystack webhook event: ${body.event}`);
 
-    const event = body.event;
-    const data = body.data;
-
-    if (event === 'charge.success') {
-      const reference = data.reference;
-      // Paystack sends amount in kobo - keep it as kobo for comparison
-      const amountPaidInKobo = data.amount;
-      this.logger.log(
-        `Processing successful charge for reference: ${reference}, amount: ${amountPaidInKobo} kobo`,
-      );
-
-      const transaction = await this.transactionRepository.findOne({
-        where: { reference },
-        relations: ['wallet'],
-      });
-
-      if (!transaction) {
-        this.logger.warn(
-          `Webhook received for unknown transaction reference: ${reference}`,
-        );
-        return;
+      if (!this.paystackService.verifyWebhookSignature(signature, body)) {
+        this.logger.error('Invalid Paystack webhook signature');
+        throw new BadRequestException('Invalid signature');
       }
 
-      if (transaction.status === TransactionStatus.SUCCESS) {
+      this.logger.log('Paystack webhook signature verified successfully.');
+
+      const event = body.event;
+      const data = body.data;
+
+      if (event === 'charge.success') {
+        const reference = data.reference;
+        // Paystack sends amount in kobo - keep it as kobo for comparison
+        const amountPaidInKobo = data.amount;
         this.logger.log(
-          `Transaction ${reference} has already been processed. Skipping.`,
+          `Processing successful charge for reference: ${reference}, amount: ${amountPaidInKobo} kobo`,
         );
-        return;
-      }
 
-      // Convert both to numbers for comparison to handle type differences
-      const expectedAmount = Number(transaction.amount);
-      const reportedAmount = Number(amountPaidInKobo);
-
-      if (expectedAmount !== reportedAmount) {
-        this.logger.error(
-          `Amount mismatch for ${reference}. Expected ${expectedAmount} kobo, but Paystack reported ${reportedAmount} kobo`,
-        );
-        // Potentially update transaction to FAILED here
-        return;
-      }
-
-      // Atomic Update
-      await this.dataSource.transaction(async (manager) => {
-        this.logger.log(
-          `Starting atomic update for transaction ${transaction.id}`,
-        );
-        transaction.status = TransactionStatus.SUCCESS;
-        transaction.metadata = { ...transaction.metadata, paystack_data: data };
-        await manager.save(transaction);
-
-        const wallet = await manager.findOne(Wallet, {
-          where: { id: transaction.wallet.id },
+        const transaction = await this.transactionRepository.findOne({
+          where: { reference },
+          relations: ['wallet'],
         });
-        if (wallet) {
-          // Calculate new balance in kobo, then convert back to naira
-          const walletBalanceInKobo = Math.round(Number(wallet.balance) * 100);
-          const newBalanceInKobo = walletBalanceInKobo + amountPaidInKobo;
-          const newBalanceInNaira = newBalanceInKobo / 100;
-          this.logger.log(
-            `Crediting wallet ${wallet.id}. Old balance: ${wallet.balance}, New balance: ${newBalanceInNaira}`,
+
+        if (!transaction) {
+          this.logger.warn(
+            `Webhook received for unknown transaction reference: ${reference}`,
           );
-          wallet.balance = newBalanceInNaira;
-          await manager.save(wallet);
-        } else {
-          this.logger.error(
-            `Could not find wallet ${transaction.wallet.id} during transaction processing for reference ${reference}`,
-          );
+          return { status: true };
         }
-      });
-      this.logger.log(
-        `Successfully processed deposit for reference ${reference}`,
-      );
+
+        if (transaction.status === TransactionStatus.SUCCESS) {
+          this.logger.log(
+            `Transaction ${reference} has already been processed. Skipping.`,
+          );
+          return { status: true };
+        }
+
+        // Convert both to numbers for comparison to handle type differences
+        const expectedAmount = Number(transaction.amount);
+        const reportedAmount = Number(amountPaidInKobo);
+
+        if (expectedAmount !== reportedAmount) {
+          this.logger.error(
+            `Amount mismatch for ${reference}. Expected ${expectedAmount} kobo, but Paystack reported ${reportedAmount} kobo`,
+          );
+          return { status: true }; // Acknowledge but don't process
+        }
+
+        // Atomic Update
+        await this.dataSource.transaction(async (manager) => {
+          this.logger.log(
+            `Starting atomic update for transaction ${transaction.id}`,
+          );
+          transaction.status = TransactionStatus.SUCCESS;
+          transaction.metadata = {
+            ...transaction.metadata,
+            paystack_data: data,
+          };
+          await manager.save(transaction);
+
+          const wallet = await manager.findOne(Wallet, {
+            where: { id: transaction.wallet.id },
+          });
+          if (wallet) {
+            // Calculate new balance in kobo, then convert back to naira
+            const walletBalanceInKobo = Math.round(
+              Number(wallet.balance) * 100,
+            );
+            const newBalanceInKobo = walletBalanceInKobo + amountPaidInKobo;
+            const newBalanceInNaira = newBalanceInKobo / 100;
+            this.logger.log(
+              `Crediting wallet ${wallet.id}. Old balance: ${wallet.balance}, New balance: ${newBalanceInNaira}`,
+            );
+            wallet.balance = newBalanceInNaira;
+            await manager.save(wallet);
+          } else {
+            this.logger.error(
+              `Could not find wallet ${transaction.wallet.id} during transaction processing for reference ${reference}`,
+            );
+          }
+        });
+        this.logger.log(
+          `Successfully processed deposit for reference ${reference}`,
+        );
+      }
       return { status: true };
+    } catch (error) {
+      this.logger.error(`Error processing Paystack webhook: ${error.message}`);
+      return { status: false, error: error.message };
     }
-    return { status: true }; // Acknowledge other events
   }
 
   async transferFunds(
@@ -306,39 +350,57 @@ export class WalletService {
   }
 
   async getWalletDetails(userId: string) {
-    let wallet = await this.walletRepository.findOne({
-      where: { user_id: userId },
-    });
-    if (!wallet) {
-      // Create wallet automatically if it doesn't exist
-      const user = { id: userId } as User; // Create minimal user object
-      wallet = await this.createWallet(user);
-    }
+    try {
+      if (!userId) {
+        throw new BadRequestException('User ID is required');
+      }
 
-    // Return wallet number and balance (converted from kobo to naira)
-    const balanceInNaira = Number(wallet.balance);
-    return {
-      wallet_number: wallet.wallet_number,
-      balance: balanceInNaira,
-    };
+      let wallet = await this.walletRepository.findOne({
+        where: { user_id: userId },
+      });
+      if (!wallet) {
+        // Create wallet automatically if it doesn't exist
+        const user = { id: userId } as User; // Create minimal user object
+        wallet = await this.createWallet(user);
+      }
+
+      // Return wallet number and balance (converted from kobo to naira)
+      const balanceInNaira = Number(wallet.balance);
+      return {
+        wallet_number: wallet.wallet_number,
+        balance: balanceInNaira,
+      };
+    } catch (error) {
+      this.logger.error(`Error retrieving wallet details: ${error.message}`);
+      throw error; // Re-throw to let controller handle it
+    }
   }
 
   async getDepositStatus(reference: string) {
-    const transaction = await this.transactionRepository.findOne({
-      where: { reference },
-    });
+    try {
+      if (!reference) {
+        throw new BadRequestException('Reference is required');
+      }
 
-    if (!transaction) {
-      throw new NotFoundException('Transaction not found');
+      const transaction = await this.transactionRepository.findOne({
+        where: { reference },
+      });
+
+      if (!transaction) {
+        throw new NotFoundException('Transaction not found');
+      }
+
+      // Convert amount from kobo back to naira for the response
+      const amountInNaira = transaction.amount / 100;
+
+      return {
+        reference: transaction.reference,
+        status: transaction.status,
+        amount: amountInNaira,
+      };
+    } catch (error) {
+      this.logger.error(`Error retrieving deposit status: ${error.message}`);
+      throw error; // Re-throw to let controller handle it
     }
-
-    // Convert amount from kobo back to naira for the response
-    const amountInNaira = transaction.amount / 100;
-
-    return {
-      reference: transaction.reference,
-      status: transaction.status,
-      amount: amountInNaira,
-    };
   }
 }
