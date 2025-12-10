@@ -30,6 +30,22 @@ import { TransferDto } from './dto/transfer.dto';
 export class WalletController {
   constructor(private readonly walletService: WalletService) {}
 
+  @Get('details')
+  @UseGuards(HybridAuthGuard, PermissionsGuard)
+  @Permissions('read')
+  @ApiOperation({ summary: 'Get wallet details' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns wallet details including number and balance.',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 404, description: 'Wallet not found.' })
+  @ApiBearerAuth('JWT-auth')
+  @ApiSecurity('ApiKeyAuth')
+  getWalletDetails(@Req() req) {
+    return this.walletService.getWalletDetails(req.user.id);
+  }
+
   @Get('balance')
   @UseGuards(HybridAuthGuard, PermissionsGuard)
   @Permissions('read')

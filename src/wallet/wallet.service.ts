@@ -305,6 +305,24 @@ export class WalletService {
     return { status: 'success', message: 'Transfer completed' };
   }
 
+  async getWalletDetails(userId: string) {
+    let wallet = await this.walletRepository.findOne({
+      where: { user_id: userId },
+    });
+    if (!wallet) {
+      // Create wallet automatically if it doesn't exist
+      const user = { id: userId } as User; // Create minimal user object
+      wallet = await this.createWallet(user);
+    }
+
+    // Return wallet number and balance (converted from kobo to naira)
+    const balanceInNaira = Number(wallet.balance);
+    return {
+      wallet_number: wallet.wallet_number,
+      balance: balanceInNaira,
+    };
+  }
+
   async getDepositStatus(reference: string) {
     const transaction = await this.transactionRepository.findOne({
       where: { reference },
