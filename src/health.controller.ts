@@ -6,4 +6,9 @@ export class HealthController {
   healthCheck() {
     return { status: 'OK' };
   }
+
+  @Get('/kaithheathcheck')
+  healthCheckTypo() {
+    return { status: 'OK' };
+  }
 }
