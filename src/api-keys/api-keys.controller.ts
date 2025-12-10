@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Req, Get } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiKeysService } from './api-keys.service';
 import {
@@ -6,9 +6,11 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiSecurity,
 } from '@nestjs/swagger';
 import { CreateApiKeyDto } from './dto/create-key.dto';
 import { RolloverApiKeyDto } from './dto/rollover-key.dto';
+import { ApiKeyResponseDto } from './dto/api-key-response.dto';
 
 @ApiTags('API Keys')
 @ApiBearerAuth('JWT-auth')
@@ -42,9 +44,11 @@ export class ApiKeysController {
   @ApiResponse({
     status: 200,
     description: 'Returns a list of API keys for the user.',
+    type: [ApiKeyResponseDto],
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiBearerAuth('JWT-auth')
+  @ApiSecurity('ApiKeyAuth')
   async getApiKeys(@Req() req) {
     return this.apiKeysService.getApiKeysForUser(req.user.id);
   }
