@@ -8,6 +8,7 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  Param,
 } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { HybridAuthGuard } from '../auth/guards/hybrid.guard';
@@ -73,6 +74,22 @@ export class WalletController {
       req.user.email,
       depositDto.amount,
     );
+  }
+
+  @Get('deposit/:reference/status')
+  @UseGuards(HybridAuthGuard, PermissionsGuard)
+  @Permissions('read')
+  @ApiOperation({ summary: 'Check deposit status by reference' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the deposit status.',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 404, description: 'Transaction not found.' })
+  @ApiBearerAuth('JWT-auth')
+  @ApiSecurity('ApiKeyAuth')
+  async getDepositStatus(@Req() req, @Param('reference') reference: string) {
+    return this.walletService.getDepositStatus(reference);
   }
 
   @Post('paystack/webhook')

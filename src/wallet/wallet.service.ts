@@ -281,4 +281,20 @@ export class WalletService {
     this.logger.log(`Transfer ${transferReference} completed successfully`);
     return { status: 'success', message: 'Transfer completed' };
   }
+
+  async getDepositStatus(reference: string) {
+    const transaction = await this.transactionRepository.findOne({
+      where: { reference },
+    });
+
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    return {
+      reference: transaction.reference,
+      status: transaction.status,
+      amount: transaction.amount,
+    };
+  }
 }
