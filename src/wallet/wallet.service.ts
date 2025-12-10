@@ -151,9 +151,13 @@ export class WalletService {
         return;
       }
 
-      if (transaction.amount !== amountPaidInKobo) {
+      // Convert both to numbers for comparison to handle type differences
+      const expectedAmount = Number(transaction.amount);
+      const reportedAmount = Number(amountPaidInKobo);
+
+      if (expectedAmount !== reportedAmount) {
         this.logger.error(
-          `Amount mismatch for ${reference}. Expected ${transaction.amount} kobo, but Paystack reported ${amountPaidInKobo} kobo`,
+          `Amount mismatch for ${reference}. Expected ${expectedAmount} kobo, but Paystack reported ${reportedAmount} kobo`,
         );
         // Potentially update transaction to FAILED here
         return;
