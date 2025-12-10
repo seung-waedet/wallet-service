@@ -30,7 +30,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
         ssl: {
           rejectUnauthorized: false,
         },
-        synchronize: true, // Auto-create tables (dev only)
+        synchronize: false,
       }),
       inject: [ConfigService],
     }),

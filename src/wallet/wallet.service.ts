@@ -48,19 +48,27 @@ export class WalletService {
   }
 
   async getBalance(userId: string) {
-    const wallet = await this.walletRepository.findOne({
+    let wallet = await this.walletRepository.findOne({
       where: { user_id: userId },
     });
-    if (!wallet) throw new NotFoundException('Wallet not found');
+    if (!wallet) {
+      // Create wallet automatically if it doesn't exist
+      const user = { id: userId } as User; // Create minimal user object
+      wallet = await this.createWallet(user);
+    }
     return { balance: wallet.balance };
   }
 
   async getTransactions(userId: string) {
-    const wallet = await this.walletRepository.findOne({
+    let wallet = await this.walletRepository.findOne({
       where: { user_id: userId },
       relations: ['transactions'],
     });
-    if (!wallet) throw new NotFoundException('Wallet not found');
+    if (!wallet) {
+      // Create wallet automatically if it doesn't exist
+      const user = { id: userId } as User; // Create minimal user object
+      wallet = await this.createWallet(user);
+    }
     return wallet.transactions.sort(
       (a, b) => b.created_at.getTime() - a.created_at.getTime(),
     );

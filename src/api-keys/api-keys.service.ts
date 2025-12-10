@@ -46,6 +46,7 @@ export class ApiKeysService {
       permissions,
       expires_at: expiresAt,
       user,
+      user_id: user.id,
       is_active: true,
     });
 
