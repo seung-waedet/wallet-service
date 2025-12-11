@@ -7,10 +7,12 @@ import { AuthController } from './auth.controller';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { UsersModule } from '../users/users.module';
+import { ApiKeysModule } from 'src/api-keys/api-keys.module';
 
 @Module({
   imports: [
     UsersModule,
+    ApiKeysModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

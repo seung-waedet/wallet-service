@@ -29,10 +29,12 @@ export class HybridAuthGuard extends AuthGuard('jwt') {
       return true;
     }
 
-    // Fallback to JWT
-    try {
-      return (await super.canActivate(context)) as boolean;
-    } catch (e) {
+    // Fallback to JWT - properly await the parent's canActivate method
+    const canActivate = await super.canActivate(context);
+    if (canActivate) {
+      request.isService = false; // Mark as user authenticated via JWT
+      return true;
+    } else {
       throw new UnauthorizedException('Unauthorized');
     }
   }
