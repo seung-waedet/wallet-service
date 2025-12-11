@@ -83,7 +83,16 @@ export class WalletService {
         const user = { id: userId } as User; // Create minimal user object
         wallet = await this.createWallet(user);
       }
-      return wallet.transactions.sort(
+
+      // Convert transaction amounts from kobo to naira for consistent display
+      const transactions = wallet.transactions.map((transaction) => {
+        return {
+          ...transaction,
+          amount: Number(transaction.amount) / 100, // Convert from kobo to naira
+        };
+      });
+
+      return transactions.sort(
         (a, b) => b.created_at.getTime() - a.created_at.getTime(),
       );
     } catch (error) {
