@@ -8,6 +8,7 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { ApiKeysModule } from 'src/api-keys/api-keys.module';
+import { HybridAuthGuard } from './guards/hybrid.guard';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ApiKeysModule } from 'src/api-keys/api-keys.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, GoogleStrategy, JwtStrategy],
+  providers: [AuthService, GoogleStrategy, JwtStrategy, HybridAuthGuard],
+  exports: [HybridAuthGuard],
 })
 export class AuthModule {}

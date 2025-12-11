@@ -4,13 +4,22 @@ import {
   ExecutionContext,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtService } from '@nestjs/jwt';
+import { Reflector } from '@nestjs/core';
 import { ApiKeysService } from '../../api-keys/api-keys.service';
 
 @Injectable()
-export class HybridAuthGuard extends AuthGuard('jwt') {
-  constructor(private apiKeysService: ApiKeysService) {
-    super();
+export class HybridAuthGuard implements CanActivate {
+  // We'll get these services via context or by creating the guard properly
+  // For now, we'll use a different approach where services are accessed differently
+
+  private jwtService?: JwtService;
+  private apiKeysService?: ApiKeysService;
+
+  // We'll set the services later via setter methods or initialization
+  setServices(jwtService: JwtService, apiKeysService: ApiKeysService) {
+    this.jwtService = jwtService;
+    this.apiKeysService = apiKeysService;
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -18,7 +27,11 @@ export class HybridAuthGuard extends AuthGuard('jwt') {
     const apiKey = request.headers['x-api-key'];
 
     if (apiKey) {
-      // Validation Logic for API Key
+      // Validate API key if present
+      if (!this.apiKeysService) {
+        throw new Error('ApiKeysService not initialized in HybridAuthGuard');
+      }
+
       const validKey = await this.apiKeysService.validateKey(apiKey);
       if (!validKey) {
         throw new UnauthorizedException('Invalid or expired API Key');
@@ -29,13 +42,30 @@ export class HybridAuthGuard extends AuthGuard('jwt') {
       return true;
     }
 
-    // Fallback to JWT - properly await the parent's canActivate method
-    const canActivate = await super.canActivate(context);
-    if (canActivate) {
+    // Fallback to JWT authentication
+    const token = this.extractTokenFromHeader(request);
+    if (!token) {
+      throw new UnauthorizedException('Access token required');
+    }
+
+    if (!this.jwtService) {
+      throw new Error('JwtService not initialized in HybridAuthGuard');
+    }
+
+    try {
+      const payload = await this.jwtService.verifyAsync(token, {
+        secret: process.env.JWT_SECRET,
+      });
+      request.user = { id: payload.sub, email: payload.email };
       request.isService = false; // Mark as user authenticated via JWT
       return true;
-    } else {
-      throw new UnauthorizedException('Unauthorized');
+    } catch (error) {
+      throw new UnauthorizedException('Invalid or expired JWT token');
     }
+  }
+
+  private extractTokenFromHeader(request: any): string | undefined {
+    const [type, token] = request.headers.authorization?.split(' ') ?? [];
+    return type === 'Bearer' ? token : undefined;
   }
 }
