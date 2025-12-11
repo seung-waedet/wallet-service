@@ -1,9 +1,4 @@
-import {
-  Module,
-  MiddlewareConsumer,
-  NestModule,
-  Provider,
-} from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
@@ -16,9 +11,6 @@ import { PaystackModule } from './paystack/paystack.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { WalletModule } from './wallet/wallet.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
-import { HybridAuthGuard } from './auth/guards/hybrid.guard';
-import { JwtService } from '@nestjs/jwt';
-import { ApiKeysService } from './api-keys/api-keys.service';
 
 @Module({
   imports: [
@@ -48,18 +40,7 @@ import { ApiKeysService } from './api-keys/api-keys.service';
     WalletModule,
   ],
   controllers: [AppController, HealthController],
-  providers: [
-    AppService,
-    {
-      provide: HybridAuthGuard,
-      useFactory: (jwtService: JwtService, apiKeysService: ApiKeysService) => {
-        const guard = new HybridAuthGuard();
-        guard.setServices(jwtService, apiKeysService);
-        return guard;
-      },
-      inject: [JwtService, ApiKeysService],
-    },
-  ],
+  providers: [AppService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
